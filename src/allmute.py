@@ -1,8 +1,9 @@
-from discord.ext import commands
 import asyncio
+import typing
+from pprint import pprint
 
 import discord
-import typing
+from discord.ext import commands
 
 
 class MuteDict(typing.TypedDict):
@@ -76,13 +77,33 @@ class ChangeView(discord.ui.View):
 
     @discord.ui.button(label="leave", style=discord.ButtonStyle.danger)
     async def leave(self, interaction: discord.Interaction, _: typing.Any) -> None:
-        await interaction.response.edit_message(view=None)
+        self.clear_items()
+        await interaction.response.edit_message(view=self)
+        if interaction.message is None:
+            return
+
+        await interaction.message.delete()
 
 
 class AllMute(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self.data: dict[int, ChangeView] = {}
+        self.data: dict[int, discord.Message] = {}
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self, mem: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+    ) -> None:
+
+        if after.channel is not None:
+            return
+        if before.channel is None:
+            return
+
+        if len(before.channel.members) != 1:
+            return
+
+        await self.data[before.channel.id].delete()
 
     @commands.hybrid_command()
     async def join(self, ctx: commands.Context) -> None:
@@ -99,9 +120,17 @@ class AllMute(commands.Cog):
             return
 
         voice_channel = ctx.author.voice.channel
+        if (mes := self.data.get(voice_channel.id)) is not None:
+            try:
+                await mes.fetch()
+                await ctx.send("already joined")
+                return
+            except discord.NotFound:
+                pass
         view = ChangeView(voice_channel)
-        self.data[voice_channel.id] = view
-        await ctx.send(voice_channel.name, view=view)
+
+        self.data[voice_channel.id] = await ctx.send(voice_channel.name, view=view)
+        print(self.data[voice_channel.id].components)
 
 
 async def setup(bot: commands.Bot) -> None:
@@ -110,8 +139,9 @@ async def setup(bot: commands.Bot) -> None:
 
 if __name__ == "__main__":
     import os
-    import discord
     from pathlib import Path
+
+    import discord
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -137,6 +167,7 @@ if __name__ == "__main__":
                 guild = await self.fetch_guild(guild_id)
 
             await self.tree.sync(guild=guild)
+            await self.tree.sync()
 
     bot = MyBot("t!", intents=intents)
     bot.run(token)
