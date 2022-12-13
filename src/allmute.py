@@ -188,6 +188,7 @@ if __name__ == "__main__":
             if guild is None:
                 guild = await self.fetch_guild(guild_id)
 
+            self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             await self.tree.sync()
 
