@@ -1,6 +1,6 @@
 import asyncio
 import typing
-from pprint import pprint
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -26,9 +26,7 @@ class ChangeView(discord.ui.View):
         self.channel = channel
 
     @discord.ui.button(label="switch", style=discord.ButtonStyle.primary)
-    async def switch(
-        self, interaction: discord.Interaction, _: discord.ui.Button
-    ) -> None:
+    async def switch(self, interaction: discord.Interaction, _: Any) -> None:
         self.is_mute = not self.is_mute
         alive, dead = make_dict(self.is_mute)
         tasks = [
@@ -43,7 +41,7 @@ class ChangeView(discord.ui.View):
         await asyncio.wait(tasks)
 
     @discord.ui.button(label="dead", style=discord.ButtonStyle.primary)
-    async def dead(self, interaction: discord.Interaction, _: typing.Any) -> None:
+    async def dead(self, interaction: discord.Interaction, _: Any) -> None:
         if not isinstance(user := interaction.user, discord.Member):
             await interaction.response.send_message("not allow DM", ephemeral=True)
             return
@@ -85,6 +83,12 @@ class ChangeView(discord.ui.View):
         await interaction.message.delete()
 
 
+class DeadView(discord.ui.View):
+    def __init__(self, change_view: ChangeView) -> None:
+        super().__init__()
+        self.change_view = change_view
+
+
 class AllMute(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -106,7 +110,7 @@ class AllMute(commands.Cog):
         await self.data[before.channel.id].delete()
 
     @commands.hybrid_command()
-    async def join(self, ctx: commands.Context) -> None:
+    async def join(self, ctx: commands.Context[typing.Any]) -> None:
         if not isinstance(ctx.author, discord.Member):
             await ctx.send("not allow DM")
             return
