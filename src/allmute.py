@@ -40,24 +40,25 @@ class ChangeView(discord.ui.View):
         await interaction.response.edit_message(view=self)
         await asyncio.wait(tasks)
 
+    async def dead_presses(self, user: discord.Member) -> typing.Optional[str]:
+        if user.voice is None:
+            return "please join vc"
+
+        if user.voice.channel != self.channel:
+            return "vc tigau"
+
+        self.dead_.append(user)
+        if self.is_mute:
+            await user.edit(mute=True)
+
     @discord.ui.button(label="dead", style=discord.ButtonStyle.primary)
     async def dead(self, interaction: discord.Interaction, _: Any) -> None:
         if not isinstance(user := interaction.user, discord.Member):
             await interaction.response.send_message("not allow DM", ephemeral=True)
             return
 
-        if user.voice is None:
-            await interaction.response.send_message("please join vc", ephemeral=True)
-            return
-
-        if user.voice.channel != self.channel:
-            await interaction.response.send_message("vc tigau", ephemeral=True)
-            return
-
-        self.dead_.append(user)
-        if not self.is_mute:
-            _, args = make_dict(self.is_mute)
-            await user.edit(**args)
+        if (mes := await self.dead_presses(user)) is not None:
+            await interaction.response.send_message(mes, ephemeral=True)
         # await interaction.response.send_message("dead", ephemeral=True)
         await interaction.response.edit_message(view=self)
 
@@ -92,7 +93,7 @@ class DeadView(discord.ui.View):
 class AllMute(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self.data: dict[int, discord.Message] = {}
+        self.data: dict[int, tuple[discord.Message, ChangeView]] = {}
 
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -101,13 +102,17 @@ class AllMute(commands.Cog):
 
         if after.channel is not None:
             return
+
         if before.channel is None:
             return
 
-        if len(before.channel.members) != 1:
+        # print(before.channel.members)
+        if before.channel.members != []:
             return
-
-        await self.data[before.channel.id].delete()
+        # print(self.data)
+        channel_id = before.channel.id
+        await self.data[channel_id][0].delete()
+        self.data.pop(channel_id)
 
     @commands.hybrid_command()
     async def join(self, ctx: commands.Context[typing.Any]) -> None:
@@ -126,15 +131,33 @@ class AllMute(commands.Cog):
         voice_channel = ctx.author.voice.channel
         if (mes := self.data.get(voice_channel.id)) is not None:
             try:
-                await mes.fetch()
+                await mes[0].fetch()
                 await ctx.send("already joined")
                 return
             except discord.NotFound:
                 pass
+        if ctx.interaction is None:
+            await ctx.message.delete()
+
         view = ChangeView(voice_channel)
 
-        self.data[voice_channel.id] = await ctx.send(voice_channel.name, view=view)
-        print(self.data[voice_channel.id].components)
+        self.data[voice_channel.id] = (
+            await ctx.send(voice_channel.name, view=view),
+            view,
+        )
+
+        # print(self.data[voice_channel.id].components)
+
+    @commands.hybrid_command()
+    async def dead(self, ctx: commands.Context, user: discord.Member) -> None:
+        if ctx.interaction is not None:
+            await ctx.interaction.response.send_message("dead", ephemeral=True)
+
+        if (mes := self.data.get(user.voice.channel.id)) is None:
+            return
+
+        view = mes[1]
+        await view.dead_presses(user)
 
 
 async def setup(bot: commands.Bot) -> None:
@@ -170,6 +193,7 @@ if __name__ == "__main__":
             if guild is None:
                 guild = await self.fetch_guild(guild_id)
 
+            self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
             await self.tree.sync()
 
